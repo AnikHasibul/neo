@@ -2,7 +2,7 @@
 
 > Unfortunately, no one can be told what The Matrix is. You have to see it for yourself. -neo (The Matrix 1999)
 
-### Installation
+## Installation
 
 Install via `go get`:
 
@@ -47,8 +47,10 @@ $ neo -c 2 longlonglongfile.txt
 
 for more colors see `neo --help`
 
-# How to quite neo!
+## How to quite neo!
 
-To pause `neo` presss `CTRL`+`C`.
-To resume the output press any key + ENTER.
-To quite `neo` press `CTRL`+`C`+`q` and enter.
+* To pause `neo` presss `CTRL`+`C`.
+
+* To resume the output press any key + ENTER.
+
+* To quite `neo` press `CTRL`+`C`+`q` and enter.
