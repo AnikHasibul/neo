@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/logrusorgru/aurora"
@@ -15,9 +16,11 @@ import (
 
 var (
 	typingSpeed int
+	mu          sync.Mutex
 	colorCode   int
 	fileName    string
 	pause       = make(chan os.Signal, 1)
+	play        = make(chan os.Signal)
 )
 
 func init() {
@@ -40,8 +43,7 @@ func init() {
 
 func main() {
 	var (
-		err  error
-		data []byte
+		hole blackHole
 	)
 
 	stdin := os.Stdin
@@ -50,35 +52,54 @@ func main() {
 		log.Fatal(err)
 	}
 	if fi.Mode()&os.ModeNamedPipe == 0 {
-		data, err = ioutil.ReadFile(fileName)
+		f, err := os.Open(fileName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		go hole.suckToBuf(f)
 	} else {
-		data, err = ioutil.ReadAll(os.Stdin)
-	}
-	if err != nil {
-		log.Fatal(err)
+		go hole.suckToBuf(os.Stdin)
 	}
 	signal.Notify(pause, os.Interrupt)
-	typingEffect(data)
-}
-
-// typingEffect prints the file with a typing effect
-func typingEffect(str []byte) {
-	var colorizer = colorFunc()
-	for _, v := range str {
-		select {
-		case <-pause:
-			pauseFunc()
-			fmt.Print(colorizer(string(v)))
-		default:
-			fmt.Print(colorizer(string(v)))
-			// A random sleep for a realistic effect
-			time.Sleep(
-				time.Duration(rand.Intn(
-					typingSpeed,
-				)) * time.Millisecond,
-			)
+	for {
+		data := hole.flush()
+		if len(data) != 0 {
+			typingEffect(data)
+		}
+		if hole.done {
+			os.Exit(0)
 		}
 	}
+}
+
+type blackHole struct {
+	buff []byte
+	done bool
+}
+
+// Take the whole things to buffer
+func (hole *blackHole) suckToBuf(r io.Reader) {
+	for {
+		p := make([]byte, 4)
+		_, err := r.Read(p)
+		mu.Lock()
+		hole.buff = append(hole.buff, p...)
+		mu.Unlock()
+		if err != io.EOF {
+			hole.done = true
+			return
+		}
+	}
+}
+
+// flush flushes the buffer
+func (hole *blackHole) flush() []byte {
+	mu.Lock()
+	defer func() {
+		hole.buff = nil
+		mu.Unlock()
+	}()
+	return hole.buff
 }
 
 // colorFunc returns the best color function according to the provided flags.
@@ -102,13 +123,26 @@ func colorFunc() func(arg interface{}) aurora.Value {
 	}
 }
 
-func pauseFunc() {
-	defer signal.Notify(pause, os.Interrupt)
-	signal.Stop(pause)
-	fmt.Print(aurora.Red(":"))
-	char := ""
-	fmt.Scanf("%s", &char)
-	if char == "q" {
-		os.Exit(0)
+// typingEffect prints the file with a typing effect
+func typingEffect(str []byte) {
+	var colorizer = colorFunc()
+	for _, v := range str {
+		select {
+		case <-pause:
+			pauseFunc()
+			fmt.Print(colorizer(string(v)))
+		default:
+			fmt.Print(colorizer(string(v)))
+			// A random sleep for a realistic effect
+			time.Sleep(
+				time.Duration(rand.Intn(
+					typingSpeed,
+				)) * time.Millisecond,
+			)
+		}
 	}
+}
+
+func pauseFunc() {
+	<-pause
 }
